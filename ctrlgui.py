@@ -132,12 +132,18 @@ class StartWindow(QMainWindow):
         self.write = False # If writing images to disc.
         self.write_num = 0 # Number of images to write.
 
+        self.frame = None # Current frame as a numpy array
+        self.detector = cv2.xfeatures2d.SIFT_create()
+        self.matcher = cv2.BFMatcher()
+        self.total_count = 0
+
     @pyqtSlot(np.ndarray, int)
     def update_frame(self, frame, timestamp):
         """
         Pulls latest frame from the camera stream, updates image display.
         Writes to disk if option toggled.
         """
+        self.frame = frame
         qimage = QImage(frame, self.camera.width, self.camera.height, 
                         self.camera.qformat)
         self.image_display.update_image(qimage)
@@ -158,6 +164,33 @@ class StartWindow(QMainWindow):
             self.write_num -= 1
         else:
             self.write = False
+
+        # Report number of features every 100th frame.
+        if (self.total_count % 100) == 0:
+            c1, c2, cm = self.count_features() # Num keypoints in img1, img2 and matches
+            print('\nKeypoints view 1:', c1)
+            print('Keypoints view2:', c2)
+            print('Matches:', cm)
+
+        self.total_count += 1
+
+    def count_features(self, ratio=0.6):
+        """
+        Performs sift feature detection, calculates number of matches.
+        """
+        frame = self.frame
+        img1 = frame[:, 640:]
+        img2 = frame[:, :640]
+        k1, d1 = self.detector.detectAndCompute(img1, None)
+        k2, d2 = self.detector.detectAndCompute(img2, None)
+
+        matches = []
+        match = self.matcher.knnMatch(d1, d2, k=2)
+        for m1, m2 in match:
+            if m1.distance < ratio*m2.distance:
+                matches.append(m1)
+
+        return len(k1), len(k2), len(matches)
 
     def update_write(self, write_num, savedir=None):
         """
